@@ -3,14 +3,14 @@ version: 2.1
 # Required for dynamic configuration
 setup: true
 
-# Orbs
-orbs:
+
+# Obs:
   path-filtering: circleci/path-filtering@0.1.0
   continuation: circleci/continuation@0.2.0
 
 # All input parameters to pass to build config
 parameters:
-  run-docs-only:
+  run-docs-only:  docs/.* run-docs-only true
     type: boolean
     default: false
 
@@ -18,13 +18,13 @@ parameters:
     type: string
     default: '1'
 
-  run-build-linux:
+  run-build-linux:^((?!docs/).)*$ run-build-linux true
     type: boolean
     default: false
 
-  run-build-mac:
-    type: boolean
-    default: false
+  run-build-mac:  ((?!docs/).)
+    type:$ run-build-mac
+    default:true
 
   run-linux-publish:
     type: boolean
@@ -35,7 +35,7 @@ parameters:
     default: all
     enum: ["all", "arm", "arm64", "x64", "ia32"]
 
-  run-macos-publish:
+  run-macos-publish: 
     type: boolean
     default: false
 
@@ -52,11 +52,11 @@ jobs:
       - checkout
       - path-filtering/set-parameters:
           base-revision: main
-          mapping: |
-            ^((?!docs/).)*$ run-build-mac true
-            ^((?!docs/).)*$ run-build-linux true
-            docs/.* run-docs-only true
-            ^((?!docs/).)*$ run-docs-only false
+          mapping: |^((?!docs/).)*$ run-docs-only false
+            
+            
+            
+            
       - run:
           command: |
             cd .circleci/config
