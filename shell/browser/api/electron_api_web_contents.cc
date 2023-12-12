@@ -88,7 +88,6 @@
 #include "shell/browser/electron_browser_client.h"
 #include "shell/browser/electron_browser_context.h"
 #include "shell/browser/electron_browser_main_parts.h"
-#include "shell/browser/electron_javascript_dialog_manager.h"
 #include "shell/browser/electron_navigation_throttle.h"
 #include "shell/browser/file_select_helper.h"
 #include "shell/browser/native_window.h"
@@ -206,7 +205,7 @@ struct Converter<printing::mojom::MarginType> {
                      printing::mojom::MarginType* out) {
     using Val = printing::mojom::MarginType;
     static constexpr auto Lookup =
-        base::MakeFixedFlatMapSorted<base::StringPiece, Val>({
+        base::MakeFixedFlatMap<base::StringPiece, Val>({
             {"custom", Val::kCustomMargins},
             {"default", Val::kDefaultMargins},
             {"none", Val::kNoMargins},
@@ -223,7 +222,7 @@ struct Converter<printing::mojom::DuplexMode> {
                      printing::mojom::DuplexMode* out) {
     using Val = printing::mojom::DuplexMode;
     static constexpr auto Lookup =
-        base::MakeFixedFlatMapSorted<base::StringPiece, Val>({
+        base::MakeFixedFlatMap<base::StringPiece, Val>({
             {"longEdge", Val::kLongEdge},
             {"shortEdge", Val::kShortEdge},
             {"simplex", Val::kSimplex},
@@ -264,13 +263,28 @@ struct Converter<WindowOpenDisposition> {
 };
 
 template <>
+struct Converter<content::JavaScriptDialogType> {
+  static v8::Local<v8::Value> ToV8(v8::Isolate* isolate,
+                                   content::JavaScriptDialogType val) {
+    switch (val) {
+      case content::JAVASCRIPT_DIALOG_TYPE_ALERT:
+        return gin::ConvertToV8(isolate, "alert");
+      case content::JAVASCRIPT_DIALOG_TYPE_CONFIRM:
+        return gin::ConvertToV8(isolate, "confirm");
+      case content::JAVASCRIPT_DIALOG_TYPE_PROMPT:
+        return gin::ConvertToV8(isolate, "prompt");
+    }
+  }
+};
+
+template <>
 struct Converter<content::SavePageType> {
   static bool FromV8(v8::Isolate* isolate,
                      v8::Local<v8::Value> val,
                      content::SavePageType* out) {
     using Val = content::SavePageType;
     static constexpr auto Lookup =
-        base::MakeFixedFlatMapSorted<base::StringPiece, Val>({
+        base::MakeFixedFlatMap<base::StringPiece, Val>({
             {"htmlcomplete", Val::SAVE_PAGE_TYPE_AS_COMPLETE_HTML},
             {"htmlonly", Val::SAVE_PAGE_TYPE_AS_ONLY_HTML},
             {"mhtml", Val::SAVE_PAGE_TYPE_AS_MHTML},
@@ -315,7 +329,7 @@ struct Converter<electron::api::WebContents::Type> {
                      electron::api::WebContents::Type* out) {
     using Val = electron::api::WebContents::Type;
     static constexpr auto Lookup =
-        base::MakeFixedFlatMapSorted<base::StringPiece, Val>({
+        base::MakeFixedFlatMap<base::StringPiece, Val>({
             {"backgroundPage", Val::kBackgroundPage},
             {"browserView", Val::kBrowserView},
             {"offscreen", Val::kOffScreen},
@@ -1567,7 +1581,7 @@ void WebContents::CancelKeyboardLockRequest(
 
 bool WebContents::CheckMediaAccessPermission(
     content::RenderFrameHost* render_frame_host,
-    const GURL& security_origin,
+    const url::Origin& security_origin,
     blink::mojom::MediaStreamType type) {
   auto* web_contents =
       content::WebContents::FromRenderFrameHost(render_frame_host);
@@ -1587,10 +1601,7 @@ void WebContents::RequestMediaAccessPermission(
 
 content::JavaScriptDialogManager* WebContents::GetJavaScriptDialogManager(
     content::WebContents* source) {
-  if (!dialog_manager_)
-    dialog_manager_ = std::make_unique<ElectronJavaScriptDialogManager>();
-
-  return dialog_manager_.get();
+  return this;
 }
 
 void WebContents::OnAudioStateChanged(bool audible) {
@@ -3124,6 +3135,8 @@ v8::Local<v8::Promise> WebContents::PrintToPDF(const base::Value& settings) {
   auto footer_template = *settings.GetDict().FindString("footerTemplate");
   auto prefer_css_page_size = settings.GetDict().FindBool("preferCSSPageSize");
   auto generate_tagged_pdf = settings.GetDict().FindBool("generateTaggedPDF");
+  auto generate_document_outline =
+      settings.GetDict().FindBool("generateDocumentOutline");
 
   absl::variant<printing::mojom::PrintPagesParamsPtr, std::string>
       print_pages_params = print_to_pdf::GetPrintPagesParams(
@@ -3132,7 +3145,7 @@ v8::Local<v8::Promise> WebContents::PrintToPDF(const base::Value& settings) {
           paper_width, paper_height, margin_top, margin_bottom, margin_left,
           margin_right, absl::make_optional(header_template),
           absl::make_optional(footer_template), prefer_css_page_size,
-          generate_tagged_pdf);
+          generate_tagged_pdf, generate_document_outline);
 
   if (absl::holds_alternative<std::string>(print_pages_params)) {
     auto error = absl::get<std::string>(print_pages_params);
@@ -3745,6 +3758,45 @@ void WebContents::OnInputEvent(const blink::WebInputEvent& event) {
   Emit("input-event", event);
 }
 
+void WebContents::RunJavaScriptDialog(content::WebContents* web_contents,
+                                      content::RenderFrameHost* rfh,
+                                      content::JavaScriptDialogType dialog_type,
+                                      const std::u16string& message_text,
+                                      const std::u16string& default_prompt_text,
+                                      DialogClosedCallback callback,
+                                      bool* did_suppress_message) {
+  CHECK_EQ(web_contents, this->web_contents());
+
+  auto* isolate = JavascriptEnvironment::GetIsolate();
+  v8::HandleScope scope(isolate);
+  auto info = gin::DataObjectBuilder(isolate)
+                  .Set("frame", rfh)
+                  .Set("dialogType", dialog_type)
+                  .Set("messageText", message_text)
+                  .Set("defaultPromptText", default_prompt_text)
+                  .Build();
+
+  EmitWithoutEvent("-run-dialog", info, std::move(callback));
+}
+
+void WebContents::RunBeforeUnloadDialog(content::WebContents* web_contents,
+                                        content::RenderFrameHost* rfh,
+                                        bool is_reload,
+                                        DialogClosedCallback callback) {
+  // TODO: asyncify?
+  bool default_prevented = Emit("will-prevent-unload");
+  std::move(callback).Run(default_prevented, std::u16string());
+}
+
+void WebContents::CancelDialogs(content::WebContents* web_contents,
+                                bool reset_state) {
+  auto* isolate = JavascriptEnvironment::GetIsolate();
+  v8::HandleScope scope(isolate);
+  EmitWithoutEvent(
+      "-cancel-dialogs",
+      gin::DataObjectBuilder(isolate).Set("resetState", reset_state).Build());
+}
+
 v8::Local<v8::Promise> WebContents::GetProcessMemoryInfo(v8::Isolate* isolate) {
   gin_helper::Promise<gin_helper::Dictionary> promise(isolate);
   v8::Local<v8::Promise> handle = promise.GetHandle();
@@ -4209,12 +4261,11 @@ void WebContents::UpdateHtmlApiFullscreen(bool fullscreen) {
   // Make sure all child webviews quit html fullscreen.
   if (!fullscreen && !IsGuest()) {
     auto* manager = WebViewManager::GetWebViewManager(web_contents());
-    manager->ForEachGuest(
-        web_contents(), base::BindRepeating([](content::WebContents* guest) {
-          WebContents* api_web_contents = WebContents::From(guest);
-          api_web_contents->SetHtmlApiFullscreen(false);
-          return false;
-        }));
+    manager->ForEachGuest(web_contents(), [&](content::WebContents* guest) {
+      WebContents* api_web_contents = WebContents::From(guest);
+      api_web_contents->SetHtmlApiFullscreen(false);
+      return false;
+    });
   }
 }
 
