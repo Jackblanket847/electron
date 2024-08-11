@@ -1,35 +1,59 @@
-name: Check Stable Prep Items
+name: Prepare Stable Release
 
 on:
-  schedule:
-    - cron:  '0 */12 * * *'
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
-permissions: {}
-
 jobs:
-  check-stable-prep-items:
-    name: Check Stable Prep Items
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Generate GitHub App token
-        uses: electron/github-app-auth-action@384fd19694fe7b6dcc9a684746c6976ad78228ae # v1.1.1
-        id: generate-token
-        with:
-          creds: ${{ secrets.RELEASE_BOARD_GH_APP_CREDS }}
-          org: electron
-      - name: Find Newest Release Project Board
-        id: find-project-number
-        env:
-          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
-        run: |
-          set -eo pipefail
-          PROJECT_NUMBER=$(gh project list --owner electron --format json | jq -r '.projects | map(select(.title | test("^[0-9]+-x-y$"))) | max_by(.number) | .number')
-          echo "PROJECT_NUMBER=$PROJECT_NUMBER" >> "$GITHUB_OUTPUT"
-      - name: Update Completed Stable Prep Items
-        uses: dsanders11/project-actions/completed-by@a24415515fa60a22f71f9d9d00e36ca82660cde9 # v1.0.1
-        with:
-          field: Prep Status
-          field-value: ✅ Complete
-          project-number: ${{ steps.find-project-number.outputs.PROJECT_NUMBER }}
-          token: ${{ steps.generate-token.outputs.token }}
+     - name: Checkout code
+       uses: actions/checkout@v3
+
+     - name: Set up Node.js
+       uses: actions/setup-node@v3
+       with:
+         node-version: '18.x'
+
+     - name: Install dependencies
+       run: npm install
+
+     - name: Run tests
+       run: npm test
+
+     - name: Build Electron App
+       run: npm run build
+
+     - name: Package Electron App
+       run: npm run package
+
+     - name: Archive Build Artifacts
+       uses: actions/upload-artifact@v3
+       with:
+         name: electron-build
+         path: release/*
+
+  create-release:
+   needs: build
+   runs-on: ubuntu-latest
+
+   steps:
+     - name: Download Build Artifacts
+       uses: actions/download-artifact@v3
+       with:
+         name: electron-build
+
+     - name: Create GitHub Release
+       uses: actions/create-release@v1
+       env:
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+       with:
+         tag_name: 'v1.0.0'
+         release_name: 'Stable Release v1.0.0'
+         draft: false
+         prerelease: false
+         files: release/*
