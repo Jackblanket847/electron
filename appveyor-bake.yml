@@ -6,8 +6,8 @@
 
 version: 1.0.{build}
 build_cloud: electronhq-16-core
-image: base-bake-image
-environment:
+image: APPVEYOR_BAKE_IMAGE
+environment: e.g. 'electron-99.0.4767.0'
   GIT_CACHE_PATH: C:\Users\appveyor\libcc_cache
   ELECTRON_OUT_DIR: Default
   ELECTRON_ENABLE_STACK_DUMPING: 1
