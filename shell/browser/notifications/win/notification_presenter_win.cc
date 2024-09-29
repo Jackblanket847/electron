@@ -14,7 +14,6 @@
 #include "base/files/file_util.h"
 #include "base/hash/md5.h"
 #include "base/logging.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "shell/browser/notifications/win/windows_toast_notification.h"
@@ -43,17 +42,17 @@ bool SaveIconToPath(const SkBitmap& bitmap, const base::FilePath& path) {
 }  // namespace
 
 // static
-NotificationPresenter* NotificationPresenter::Create() {
+std::unique_ptr<NotificationPresenter> NotificationPresenter::Create() {
   if (!WindowsToastNotification::Initialize())
-    return nullptr;
+    return {};
   auto presenter = std::make_unique<NotificationPresenterWin>();
   if (!presenter->Init())
-    return nullptr;
+    return {};
 
   if (IsDebuggingNotifications())
     LOG(INFO) << "Successfully created Windows notifications presenter";
 
-  return presenter.release();
+  return presenter;
 }
 
 NotificationPresenterWin::NotificationPresenterWin() = default;

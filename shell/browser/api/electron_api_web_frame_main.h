@@ -12,10 +12,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
+#include "content/public/browser/frame_tree_node_id.h"
 #include "gin/wrappable.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "shell/browser/event_emitter_mixin.h"
+#include "shell/common/api/api.mojom.h"
 #include "shell/common/gin_helper/constructible.h"
 #include "shell/common/gin_helper/pinnable.h"
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom-forward.h"
@@ -38,10 +40,10 @@ namespace electron::api {
 class WebContents;
 
 // Bindings for accessing frames from the main process.
-class WebFrameMain : public gin::Wrappable<WebFrameMain>,
-                     public gin_helper::EventEmitterMixin<WebFrameMain>,
-                     public gin_helper::Pinnable<WebFrameMain>,
-                     public gin_helper::Constructible<WebFrameMain> {
+class WebFrameMain final : public gin::Wrappable<WebFrameMain>,
+                           public gin_helper::EventEmitterMixin<WebFrameMain>,
+                           public gin_helper::Pinnable<WebFrameMain>,
+                           public gin_helper::Constructible<WebFrameMain> {
  public:
   // Create a new WebFrameMain and return the V8 wrapper of it.
   static gin::Handle<WebFrameMain> New(v8::Isolate* isolate);
@@ -52,7 +54,8 @@ class WebFrameMain : public gin::Wrappable<WebFrameMain>,
   static gin::Handle<WebFrameMain> FromOrNull(
       v8::Isolate* isolate,
       content::RenderFrameHost* render_frame_host);
-  static WebFrameMain* FromFrameTreeNodeId(int frame_tree_node_id);
+  static WebFrameMain* FromFrameTreeNodeId(
+      content::FrameTreeNodeId frame_tree_node_id);
   static WebFrameMain* FromRenderFrameHost(
       content::RenderFrameHost* render_frame_host);
 
@@ -109,7 +112,7 @@ class WebFrameMain : public gin::Wrappable<WebFrameMain>,
                    v8::Local<v8::Value> message_value,
                    std::optional<v8::Local<v8::Value>> transfer);
 
-  int FrameTreeNodeID() const;
+  int FrameTreeNodeIDAsInt() const;
   std::string Name() const;
   base::ProcessId OSProcessID() const;
   int ProcessID() const;
@@ -128,7 +131,7 @@ class WebFrameMain : public gin::Wrappable<WebFrameMain>,
   mojo::Remote<mojom::ElectronRenderer> renderer_api_;
   mojo::PendingReceiver<mojom::ElectronRenderer> pending_receiver_;
 
-  int frame_tree_node_id_;
+  content::FrameTreeNodeId frame_tree_node_id_;
 
   raw_ptr<content::RenderFrameHost> render_frame_ = nullptr;
 

@@ -29,7 +29,7 @@
 
 version: 1.0.{build}
 build_cloud: electronhq-16-core
-image: e-130.0.6672.0
+image: e-131.0.6734.0
 environment:
   GIT_CACHE_PATH: C:\Users\appveyor\libcc_cache
   ELECTRON_OUT_DIR: Default
@@ -70,8 +70,9 @@ for:
         - job_name: Build Arm on X64 Windows
 
     build_script:
+      # TODO: Remove --ignore-engines once WOA image is up to node 20
       - ps: |
-          node script/yarn.js install --frozen-lockfile
+          node script/yarn.js install --frozen-lockfile --ignore-engines
           node script/doc-only-change.js --prNumber=$env:APPVEYOR_PULL_REQUEST_NUMBER
           $env:SHOULD_SKIP_ARTIFACT_VALIDATION = "false"
           if ($LASTEXITCODE -eq 0) {
@@ -95,6 +96,8 @@ for:
       - git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
       - ps: New-Item -Name depot_tools\.disable_auto_update -ItemType File
       - depot_tools\bootstrap\win_tools.bat
+      - ps: |
+          Set-Content -Path $pwd\depot_tools\build_telemetry.cfg -Value '{"user": "info@electronjs.org", "status": "opt-out", "countdown": 10, "version": 1}'
       - ps: $env:PATH="$pwd\depot_tools;$env:PATH"
       - ps: >-
           if (Test-Path -Path "$pwd\src\electron") {
@@ -174,8 +177,8 @@ for:
           if ($env:GN_CONFIG -eq 'release') {
             # Needed for msdia140.dll on 64-bit windows
             $env:Path += ";$pwd\third_party\llvm-build\Release+Asserts\bin"
-            autoninja -C out/Default electron:electron_symbols
           }
+      - if "%GN_CONFIG%"=="release" ( autoninja -C out/Default electron:electron_symbols )
       - ps: >-
           if ($env:GN_CONFIG -eq 'release') {
             python3 electron\script\zip-symbols.py
@@ -262,7 +265,7 @@ for:
 
     build_script:
       - ps: |
-          node script/yarn.js install --frozen-lockfile
+          node script/yarn.js install --frozen-lockfile --ignore-engines
           node script/doc-only-change.js --prNumber=$env:APPVEYOR_PULL_REQUEST_NUMBER
           if ($LASTEXITCODE -eq 0) {
             Write-warning "Skipping build for doc only change"
@@ -325,4 +328,3 @@ for:
     on_finish:
       # Uncomment these lines to enable RDP
       # - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
-      - if exist electron\electron.log ( appveyor-retry appveyor PushArtifact electron\electron.log )

@@ -15,13 +15,11 @@ DelayedNativeViewHost::~DelayedNativeViewHost() = default;
 
 void DelayedNativeViewHost::ViewHierarchyChanged(
     const views::ViewHierarchyChangedDetails& details) {
-  // NativeViewHost doesn't expect to have children, so filter the
-  // ViewHierarchyChanged events before passing them on.
-  if (details.child == this) {
-    NativeViewHost::ViewHierarchyChanged(details);
-    if (details.is_add && GetWidget() && !native_view())
-      Attach(native_view_);
-  }
+  if (!details.is_add && native_view())
+    Detach();
+  NativeViewHost::ViewHierarchyChanged(details);
+  if (details.is_add && GetWidget() && !native_view())
+    Attach(native_view_);
 }
 
 bool DelayedNativeViewHost::OnMousePressed(const ui::MouseEvent& ui_event) {
